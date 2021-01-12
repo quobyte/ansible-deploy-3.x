@@ -55,8 +55,6 @@
 
 - hosts: dataserver
   serial: 1
-  vars_files:
-  - vars/quobyte.yaml
   become: yes
   gather_facts: no
   tasks:
