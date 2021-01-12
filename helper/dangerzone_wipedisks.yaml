@@ -1,0 +1,9 @@
+---
+- hosts: dataserver 
+  become: yes
+  tasks:
+
+    - name: wipe all disks. Dangerzone! 
+      shell: umount /dev/sdb; umount /dev/sdc 
+    - name: wipe all disks. Dangerzone! 
+      shell: wipefs -a /dev/sdb; wipefs -a /dev/sdc 

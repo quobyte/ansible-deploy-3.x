@@ -1,0 +1,329 @@
+- hosts: dataserver
+  any_errors_fatal: false
+  vars_files:
+    - vars/quobyte.yaml
+  become: yes
+  tasks:
+
+    - name: Download Quobyte Software installer
+      get_url:
+        url: https://www.quobyte.com/install 
+        dest: ~/install_quobyte
+        mode: '0755'
+      tags: packages
+      
+    - name: Prevent STUPID Postfix popup
+      replace:
+        path: ~/install_quobyte
+        regexp: 'sudo dpkg-reconfigure --unseen-only postfix'
+        replace: '## sudo dpkg-reconfigure --unseen-only postfix'
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      tags: packages
+
+    - name: force install script to be really non-interactive
+      replace:
+        path: ~/install_quobyte
+        regexp: 'read -n 1 RESPONSE'
+        replace: 'return 1'
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      tags: packages
+
+
+    - name: Install Epel Centos
+      yum:
+        name: epel-release
+        state: present
+        update_cache: yes
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      tags: packages
+
+    - name: Install packages Centos
+      yum:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - java-11-openjdk
+        - chrony
+        - htop
+        - numactl
+        - numad
+        - netdata
+        - irqbalance
+        - xfsprogs
+        - ntpstat
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      tags: packages
+
+    - name: Install packages Ubuntu
+      apt:
+        name: "{{ packages }}"
+        state: present
+        update_cache: yes
+      vars:
+        packages:
+        - openjdk-11-jre-headless
+        - chrony
+        - htop
+        - numactl
+        - numad
+        - netdata
+        - irqbalance
+        - tuned
+        - xfsprogs
+        - ntpstat
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      tags: packages
+
+    - name: Ensure netdata is configured to listen on all IP's
+      lineinfile:
+        path: /etc/netdata/netdata.conf
+        regexp: 'bind to = localhost'
+        line:         bind to = {{ ansible_default_ipv4.address }}
+      tags: packages
+
+    - name: Restart netdata
+      service:
+        name: netdata
+        state: restarted
+        enabled: yes
+      tags: packages
+
+    - name: Ensure Chrony is running
+      service:
+        name: chronyd
+        state: started
+        enabled: yes
+      ignore_errors: yes
+      tags: packages
+
+    - name: Ensure Numad is running
+      service:
+        name: numad
+        state: started
+        enabled: yes
+      ignore_errors: yes
+      tags: packages
+
+    - name: Stop and Disable Firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+
+    - name: Disable SE Linux
+      shell:
+        cmd: /usr/sbin/setenforce 0
+      register: command_result
+      failed_when: "'ERROR' in command_result.stderr"
+      ignore_errors: yes
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      tags: prep
+
+    - name: Disable SELinux permanently
+      selinux:
+        state: disabled
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      tags: prep
+
+    - name: Ensure Apparmor is stopped
+      service:
+        name: apparmor
+        state: stopped
+        enabled: no
+      ignore_errors: yes
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      tags: prep
+
+    - name: Remove apparmor
+      package:
+        name: apparmor
+        state: absent
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      ignore_errors: yes
+      tags: prep
+
+    - name: Remove swaps from fstab
+      lineinfile:
+        dest: /etc/fstab
+        regexp: '^/[\S]+\s+swap\s+swap'
+        state: absent
+      tags: prep
+
+    - name: Disable swap
+      shell:
+        cmd: swapoff -a
+      tags: prep
+
+    - name: Copy network_tune config
+      copy:
+         src: templates/network_tune
+         dest: /etc/init.d/
+         mode: '0770'
+      tags: tune
+
+    - name: Copy network_tune service
+      copy:
+         src: templates/network_tune.service
+         dest: /etc/systemd/system/
+      tags: tune
+
+    - name: Reload service daemon
+      shell:
+        cmd: systemctl daemon-reload
+      tags: tune
+
+    - name: Start and enable network_tune service
+      service:
+        name: network_tune
+        state: started
+        enabled: yes
+      tags: tune
+
+    - name: Ensure irqbalance is set to oneshot - Centos
+      lineinfile:
+        path: /etc/sysconfig/irqbalance
+        regexp: '^#IRQBALANCE_ONESHOT='
+        line: IRQBALANCE_ONESHOT=1
+      when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
+      tags: tune
+
+    - name: Ensure irqbalance is set to oneshot - Ubuntu
+      lineinfile:
+        path: /etc/default/irqbalance
+        regexp: '^#IRQBALANCE_ONESHOT='
+        line: IRQBALANCE_ONESHOT=1
+      when: ansible_distribution == 'Debian' or ansible_distribution == 'Ubuntu'
+      tags: tune
+
+    - name: Restart irqbalance
+      service:
+        name: irqbalance
+        state: restarted
+        enabled: yes
+      tags: tune
+
+- hosts: dataserver
+  any_errors_fatal: false
+  vars_files:
+    - vars/quobyte.yaml
+  become: yes
+  gather_facts: no
+  tasks:
+    - name: Add additional Quobyte dataservice nodes
+      ignore_errors: yes
+      shell:
+        cmd: ~/install_quobyte add --services data --registry-endpoints {{ registry }}
+      tags: add_datanodes
+
+    - name: Copy updated Quobyte tuned config
+      copy:
+         src: templates/tuned.conf
+         dest: /usr/lib/tuned/quobyte-server-performance/
+      tags: tune
+
+    - name: Set Quobyte tuned server profile
+      shell:
+        cmd: tuned-adm profile quobyte-server-performance
+      tags: tune
+
+    - name: Restart tuned
+      service:
+        name: tuned
+        state: restarted
+        enabled: yes
+      tags: tune
+
+
+    - name: Create a list of all devices
+      shell:
+        cmd: lsblk -dn -o NAME,TYPE |grep disk |awk '{print $1}'
+      register: list_all
+      tags: devices
+
+    - set_fact: flist_all={{ list_all.stdout_lines }}
+      tags: devices
+
+    - name: Create a list of non empty devices
+      shell:
+        cmd: blkid |awk '{print $1}'|sed 's/://'|sed 's/[0-9]\+$//'|uniq
+      register: list_non_empty
+      tags: devices
+
+    - set_fact: flist_non_empty={{ list_non_empty.stdout }}
+      tags: devices
+
+    - set_fact:
+        flist_empty: "{{ list_all.stdout_lines | difference (list_non_empty.stdout) }}"
+      tags: devices
+
+    - name: Create filesystem on empty devices
+      shell: mkfs.xfs -q -f -L quobyte-dev -isize=1024 /dev/{{ item }}
+      with_items:
+        - "{{ flist_empty }}"
+      register: _create_filesystems
+      async: 1200
+      poll: 0
+      ignore_errors: yes
+      tags: devices
+
+    - name: Wait for creation to finish
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: _jobs1
+      until: _jobs1.finished
+      delay: 5
+      retries: 1000
+      with_items: "{{ _create_filesystems.results }}"
+      ignore_errors: yes
+      tags: devices
+
+    - name: Create quobyte label list
+      shell: lsblk -o name,label |grep quobyte-dev |awk '{print $1}'
+      register: _quobyte_labeled
+      tags: devices
+
+    - set_fact: f_quobyte_labeled={{ _quobyte_labeled.stdout_lines }}
+      tags: devices
+
+    - name: Check number of devices
+      shell:
+        cmd: lsblk -o name,label |grep quobyte-dev |awk '{print $1}'
+      register: _number_devices
+      tags: devices
+
+    - set_fact:
+        flist_d: "{{ flist_empty }}"
+      tags: devices
+
+    - debug: var=flist_d
+
+    - name: Wait for automounted data devices
+      wait_for:
+        path: /proc/mounts
+        search_regex: /var/lib/quobyte/mnt/inspector-{{ item }}
+      with_items:
+        - "{{ flist_d }}"
+
+    - name: Create Quobyte additional data devices
+      shell: qmkdev -t D /var/lib/quobyte/mnt/inspector-{{ item }}
+      with_items:
+        - "{{ flist_d }}"
+      register: _create_additional_data_devices
+      async: 1200
+      poll: 0
+      tags: devices
+
+    - name: Wait for creation to finish
+      async_status:
+        jid: "{{ item.ansible_job_id }}"
+      register: _jobs2
+      until: _jobs2.finished
+      delay: 5
+      retries: 1000
+      with_items: "{{ _create_additional_data_devices.results }}"
+      tags: devices
+ 

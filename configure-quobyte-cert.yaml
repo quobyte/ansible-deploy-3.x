@@ -1,0 +1,90 @@
+---
+- hosts: cluster[0]
+  vars:
+     _nodes: "{{ groups['cluster']}}"
+     _services:
+      - registry
+      - metadata
+      - data
+      - api
+      - webconsole
+      - s3
+      - client
+
+  vars_files:
+    - vars/quobyte.yaml
+  become: yes
+  gather_facts: no
+  tasks:
+
+    - name: Cleanup
+      shell:
+        cmd: rm -rf service* ca*
+
+    - name: Create a new CA
+      shell:
+        cmd: quobyte_init_ca --registry={{registry}}
+
+    - name: Create Certificate Enabled Services
+      shell:
+        cmd: quobyte_create_service --type {{item.0}} --host {{item.1}}
+      with_nested:
+        - "{{ _services }}"
+        - "{{ _nodes }}"        
+
+- hosts: cluster
+  vars_files:
+  - vars/quobyte.yaml
+  become: yes
+  gather_facts: no
+  tasks:
+
+    - name: restart Quobyte registry service
+      service:
+        name: quobyte-registry
+        state: restarted
+        enabled: yes
+      tags: services
+
+    - name: Restart Quobyte api service
+      service:
+        name: quobyte-api
+        state: restarted
+        enabled: yes
+      tags: services
+
+    - name: Restart Quobyte webconsole  service
+      service:
+        name: quobyte-webconsole
+        state: restarted
+        enabled: yes
+      tags: services
+
+    - name: Restart Quobyte metadata service
+      service:
+        name: quobyte-metadata
+        state: restarted
+        enabled: yes
+      tags: services
+
+    - name: Restart Quobyte data service
+      service:
+        name: quobyte-data
+        state: restarted
+        enabled: yes
+      tags: services
+
+    - name: Restart quobyte-client
+      service:
+        name: quobyte-client
+        state: restarted
+        enabled: yes
+      tags: services,client
+
+    - name: Restart s3-client
+      service:
+        name: quobyte-s3
+        state: restarted
+        enabled: yes
+      tags: services,client
+

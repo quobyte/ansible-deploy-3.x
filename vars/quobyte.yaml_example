@@ -1,0 +1,27 @@
+#
+# The first nodes in the inventory file are used for registry services
+# Registry nodes are used for service lookup, it can be compaired to a lightweight DNS server.
+# Registry nodes also have metadata and data services installed and have the same active role as any other nodes in the cluster.
+# The first should be resolvable using a DNS CNAME or A record that is used for service discovery.
+#
+# When there is no DNS server availible the IP addresses of the first 5 (or 4) nodes in the inventory file can be used for the registry service
+registry: 10.138.15.226,10.138.15.227,10.138.15.225
+#
+# The S3 endpoint is the DNS name used for accessing the S3 API
+# It is recommended that the S3 endpoint resolves to a load balancer and the loadbalancer forwards the traffic to the quobyte storage nodes
+s3_endpoint: s3.quobyte.local
+#
+# Network is used to define the network used for data transfers, make sure that the fastest network interfaces are used
+network: 10.138.0.0/16
+#
+# Mount point for the Quobyte client. Usually does not need to be adjusted.
+mountpoint: /quobyte
+#
+# Every cluster should have dedicated metadata and data devices. 
+# With this playbook version you decide per device name (e.g. sdb/sdc/...) 
+# which device will do which job. 
+metadatadevice: sdb
+# Provide a name for your Quobyte cluster
+clustername: quobyte-cluster
+# Optional: How many nodes should run Quobyte core services? (counts from 0 - n) 
+## clustersize: 2

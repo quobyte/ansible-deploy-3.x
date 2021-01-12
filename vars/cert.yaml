@@ -1,0 +1,7 @@
+threads:
+  - "-npernode 4"
+  - "-npernode 8"
+  - "-npernode 16"
+size:
+  - "-t 128k"
+  - "-t 64k"
