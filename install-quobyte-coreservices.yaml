@@ -127,6 +127,7 @@
     - name: Disable SELinux permanently
       selinux:
         state: disabled
+      ignore_errors: yes
       when: ansible_distribution == 'CentOS' or ansible_distribution == 'Red Hat Enterprise Linux'
       tags: prep
 
