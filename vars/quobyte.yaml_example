@@ -25,3 +25,6 @@ metadatadevice: sdb
 clustername: quobyte-cluster
 # Optional: How many nodes should run Quobyte core services? (counts from 0 - n) 
 ## clustersize: 2
+#
+# Optional: blacklist devices that Quobyte should not care about
+##blacklisted_devices: sdd
