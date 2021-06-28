@@ -3,6 +3,8 @@
   any_errors_fatal: false
   vars_files:
     - vars/quobyte.yaml
+  vars:
+    blacklisted_devices: ""
   become: yes
   tasks:
 
@@ -224,8 +226,13 @@
     - set_fact: flist_non_empty="{{ list_non_empty.stdout }}"
       tags: devices
 
+    - set_fact: blacklist="{{ flist_non_empty + blacklisted_devices }}"
+
+    - debug: 
+        var: blacklist
+
     - set_fact:
-        flist_empty: "{{ list_all.stdout_lines | difference (list_non_empty.stdout) }}"
+        flist_empty: "{{ list_all.stdout_lines | difference (blacklist) }}"
       tags: devices
 
     - name: Create filesystem on empty devices
